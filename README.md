@@ -1,5 +1,9 @@
 # Sky Recomp - Native PC Recompilation
 
+> **Built on [nxrt](https://github.com/fedebuonco/nxrt).** The runtime, recompiler, renderers, kernel, HLE services and
+> app shell come from the vendored `nxrt` submodule (v0.3.0, `git clone --recursive`). This repository holds Skyward
+> Sword HD's own hooks and texture patches (`runtime/`), its packaging tools (`tools/`) and its documentation.
+
 **Sky Recomp** is a native cross-platform port (**Windows**, **Linux**, and **macOS**) based on static AArch64 -> C recompilation of *The Legend of Zelda: Skyward Sword HD*.
 
 **Development status: experimental.** Full-game stability has not been established. Crashes, menu freezes and rendering differences are still being investigated. Use the [diagnostic log](docs/diagnostics.md) to report a problem; see the [review of reported issues](docs/video-review.md) for confirmed changes and remaining checks.
@@ -10,8 +14,6 @@ Source folders and local runtime files are described in [Repository layout](docs
 > **No game files are included.** Sky Recomp requires your own legally obtained copy of the game files for *The Legend of Zelda: Skyward Sword HD* (**v1.0.0**, without updates).
 > Instructions on how to obtain these files will **NOT** be provided.
 > This project consists exclusively of the open-source static recompiler tooling, compatibility layers, and the native runtime.
-
-![The Legend of Zelda: Skyward Sword HD running natively on PC](docs/gameplay.png)
 
 ---
 

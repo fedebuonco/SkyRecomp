@@ -18,6 +18,13 @@
 // glyphs of its own: keyboard bindings don't change the prompts.)
 #include "texpatch.h"
 
+// (Sky Recomp's texture restyling - button prompts, keyboard glyphs - on the code it shares with LAS Recomp's: the LAS
+// branches are compiled out, its cosmetics stay at Default here)
+#define g_is_las 0
+static const char *rando_seed_dir(void) { return NULL; }  // (no randomizer: the LAS seed tunic map is never there)
+enum { N_TUNIC_COLOURS = 13, N_HEART_COLOURS = 9 };
+static struct { int tunic, hearts; bool hide_hero_icon; } g_cosmetics;
+
 #include <math.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -29,16 +36,16 @@
 #include <SDL3/SDL.h>
 
 #include "../hle.h"
-#include "../input_bind.h"
-#include "../platform.h"
-#include "../rando.h"
+#include "input_bind.h"
+#include "nx_input.h"
+#include "platform.h"
 #include "../settings.h"
 #include "astc.h"
 #include "tegra.h"
 
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
-#include "../../third_party/imgui/imstb_truetype.h"
+#include "imstb_truetype.h"
 
 enum { K_BC5, K_BC3, K_ASTC4, K_RGBA8, K_BC1, K_RG8 };
 enum { R_A = 1, R_B, R_X, R_Y, R_L, R_R, R_ZL, R_ZR, R_PLUS, R_MINUS, R_HERO, R_SHEET,
@@ -543,18 +550,18 @@ int texpatch_identify(const NvnTexture *t) {
 }
 
 static int prompt_style(void) {
-    // LARECOMP_PROMPTS=nintendo|xbox|playstation|keyboard: test override, until frame LARECOMP_PROMPTS_UNTIL (then the setting)
+    // NXRT_PROMPTS=nintendo|xbox|playstation|keyboard: test override, until frame NXRT_PROMPTS_UNTIL (then the setting)
     static int env = -2;
     static long until;
     if (env == -2) {
-        const char *e = getenv("LARECOMP_PROMPTS");
+        const char *e = getenv("NXRT_PROMPTS");
         env = !e ? -1 : !strcmp(e, "xbox") ? PROMPTS_XBOX : !strcmp(e, "playstation") ? PROMPTS_PLAYSTATION :
               !strcmp(e, "keyboard") ? PROMPTS_KEYBOARD :
               !strcmp(e, "nintendo") ? PROMPTS_NINTENDO : PROMPTS_AUTO;
-        until = getenv("LARECOMP_PROMPTS_UNTIL") ? atol(getenv("LARECOMP_PROMPTS_UNTIL")) : -1;
+        until = getenv("NXRT_PROMPTS_UNTIL") ? atol(getenv("NXRT_PROMPTS_UNTIL")) : -1;
     }
     extern uint64_t renderer_present_count(void);
-    int p = env >= 0 && (until < 0 || (long)renderer_present_count() < until) ? env : g_settings.prompts;
+    int p = env >= 0 && (until < 0 || (long)renderer_present_count() < until) ? env : g_input_settings.prompts;
     if (p == PROMPTS_XBOX) return STYLE_XBOX;
     if (p == PROMPTS_PLAYSTATION) return STYLE_PS;
     if (p == PROMPTS_KEYBOARD) return STYLE_KEYBOARD;
@@ -565,9 +572,9 @@ static int prompt_style(void) {
 }
 
 static bool hide_hero(void) {
-    static int env = -2;  // LARECOMP_HIDE_HERO=0/1: test override
-    if (env == -2) { const char *e = getenv("LARECOMP_HIDE_HERO"); env = e ? atoi(e) != 0 : -1; }
-    return env >= 0 ? env : g_settings.hide_hero_icon;
+    static int env = -2;  // NXRT_HIDE_HERO=0/1: test override
+    if (env == -2) { const char *e = getenv("NXRT_HIDE_HERO"); env = e ? atoi(e) != 0 : -1; }
+    return env >= 0 ? env : g_cosmetics.hide_hero_icon;
 }
 
 // The label a glyph of `role` gets: whichever button is bound to that Switch input now
@@ -666,7 +673,7 @@ static void cosmetics_test(void);
 
 uint32_t texpatch_generation(void) {  // (a rebind re-uploads the glyphs, like a style change; so does a tunic colour)
     cosmetics_test();
-    return (1 + (uint32_t)prompt_style() + (hide_hero() ? 4 : 0) + (labels_hash() << 3)) ^ (uint32_t)g_settings.tunic * 0x9E3779B1u;
+    return (1 + (uint32_t)prompt_style() + (hide_hero() ? 4 : 0) + (labels_hash() << 3)) ^ (uint32_t)g_cosmetics.tunic * 0x9E3779B1u;
 }
 
 // ------------------------------------------------------------------ block codecs (BC4/BC5, BC1/BC3, ASTC 4x4)
@@ -1260,32 +1267,32 @@ done:
 // red tunic maps differ (cloth, cap, collar ring) the green pixels get a hue / saturation / value change (PIL HSV,
 // 0-255), keeping the shading. Every mip level is recoloured from the game's own green map, so a seed's own colour
 // is replaced too; "Default" uploads whatever the files hold (green, or an older seed's colour).
-const char *const g_tunic_colours[N_TUNIC_COLOURS] = {"Default", "Purple", "Orange", "Yellow", "Pink", "Teal", "Sky",
+static const char *const g_tunic_colours[N_TUNIC_COLOURS] = {"Default", "Purple", "Orange", "Yellow", "Pink", "Teal", "Sky",
                                                       "Brown", "Black", "White", "Grey", "Lime", "Magenta"};
 static const float k_tunic_hsv[N_TUNIC_COLOURS][3] = {  // hue (-1 = keep), saturation factor, value factor
     {0}, {195, 1.0f, 1.1f}, {20, 1.2f, 1.75f}, {40, 1.05f, 2.15f}, {232, 0.75f, 1.5f}, {125, 1.0f, 1.0f},
     {140, 0.8f, 1.45f}, {16, 0.75f, 0.8f}, {-1, 0.15f, 0.45f}, {-1, 0.06f, 2.1f}, {-1, 0.0f, 1.1f}, {70, 1.0f, 1.4f},
     {215, 1.0f, 1.15f}};
 // Hearts: the colour a full heart gets (sRGB); empty hearts and the frame keep their shade of it (darker)
-const char *const g_heart_colours[N_HEART_COLOURS] = {"Default", "Blue", "Green", "Purple", "Gold", "Orange", "Pink",
+static const char *const g_heart_colours[N_HEART_COLOURS] = {"Default", "Blue", "Green", "Purple", "Gold", "Orange", "Pink",
                                                       "Teal", "White"};
 static const uint8_t k_heart_rgb[N_HEART_COLOURS][3] = {{0}, {40, 110, 255}, {40, 205, 60}, {170, 70, 255},
                                                         {255, 200, 30}, {255, 125, 20}, {255, 105, 185},
                                                         {20, 205, 195}, {240, 240, 240}};
 
-// LARECOMP_COSMETICS=<frame>:<tunic>:<hearts>,...  test hook: set the colours (by name) at those frames
+// NXRT_COSMETICS=<frame>:<tunic>:<hearts>,...  test hook: set the colours (by name) at those frames
 static void cosmetics_test(void) {
     static const char *next;
     static int init;
-    if (!init) { init = 1; next = getenv("LARECOMP_COSMETICS"); }
+    if (!init) { init = 1; next = getenv("NXRT_COSMETICS"); }
     long at;
     char tu[32], he[32];
     if (!next || !*next || sscanf(next, "%ld:%31[^:]:%31[^,]", &at, tu, he) != 3) return;
     extern uint64_t renderer_present_count(void);
     if ((long)renderer_present_count() < at) return;
-    for (int i = 0; i < N_TUNIC_COLOURS; i++) if (!strcmp(tu, g_tunic_colours[i])) g_settings.tunic = i;
-    for (int i = 0; i < N_HEART_COLOURS; i++) if (!strcmp(he, g_heart_colours[i])) g_settings.hearts = i;
-    LOG("[cosmetics] test: tunic %s, hearts %s\n", g_tunic_colours[g_settings.tunic], g_heart_colours[g_settings.hearts]);
+    for (int i = 0; i < N_TUNIC_COLOURS; i++) if (!strcmp(tu, g_tunic_colours[i])) g_cosmetics.tunic = i;
+    for (int i = 0; i < N_HEART_COLOURS; i++) if (!strcmp(he, g_heart_colours[i])) g_cosmetics.hearts = i;
+    LOG("[cosmetics] test: tunic %s, hearts %s\n", g_tunic_colours[g_cosmetics.tunic], g_heart_colours[g_cosmetics.hearts]);
     next = strchr(next, ',');
     if (next) next++;
 }
@@ -1297,7 +1304,7 @@ static float srgb_lin(int c) { float v = c / 255.0f; return v <= 0.04045f ? v / 
 // (92, 15, 15) and the frame's darker red keep their brightness relative to it.
 void texpatch_heart_tint(int kind, float tint[8]) {
     cosmetics_test();
-    int c = g_settings.hearts;
+    int c = g_cosmetics.hearts;
     if (c <= 0 || c >= N_HEART_COLOURS || !kind) return;
     for (int k = 0; k < 3; k++) tint[k] = srgb_lin(k_heart_rgb[c][k]) / 0.319f;
     tint[3] = 1;
@@ -1425,7 +1432,7 @@ static const uint8_t *tunic_level(int colour, uint32_t lv) {
 }
 
 static void tunic_apply(uint32_t lv, uint8_t *blocks, uint32_t w, uint32_t h, uint32_t row) {
-    int c = g_settings.tunic;
+    int c = g_cosmetics.tunic;
     if (c <= 0 || c >= N_TUNIC_COLOURS || !g_tunic_layout_ok) return;
     const uint8_t *src = tunic_level(c, lv);
     uint32_t bw = (w + 3) / 4, bh = (h + 3) / 4;
